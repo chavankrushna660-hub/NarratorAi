@@ -1,0 +1,87 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-[#111111] font-sans antialiased transition-colors duration-300;
+  }
+
+  .dark body {
+    @apply bg-[#050505] text-[#EEEEEE];
+  }
+}
+
+.markdown-body {
+  @apply text-[#111111] leading-relaxed transition-colors duration-300;
+}
+
+.dark .markdown-body {
+  @apply text-[#EEEEEE];
+}
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+  @apply font-semibold mt-6 mb-4;
+}
+
+.markdown-body p {
+  @apply mb-4;
+}
+
+.markdown-body strong {
+  @apply font-semibold;
+}
+
+/* Custom scrollbar for minimalist look */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #EEEEEE;
+  border-radius: 10px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #222222;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #DDDDDD;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #333333;
+}
+
+/* Input/Select focus styles for dark mode */
+.dark input, .dark select {
+  @apply border-[#222222] focus:border-[#EEEEEE];
+}
+
+.dark label {
+  @apply text-[#888888];
+}
+
+.dark .bg-white {
+  @apply bg-[#050505];
+}
+
+.dark .border-[#EEEEEE] {
+  @apply border-[#222222];
+}
+
+.dark .text-[#666666] {
+  @apply text-[#888888];
+}
+
+.dark .text-[#111111] {
+  @apply text-[#EEEEEE];
+}
