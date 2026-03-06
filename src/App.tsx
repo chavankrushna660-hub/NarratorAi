@@ -34,6 +34,7 @@ const TONES = ["Conversational", "Authoritative", "Humorous", "Dramatic", "Minim
 
 export default function App() {
   const [step, setStep] = useState<Step>('brief');
+  const [lastActiveStep, setLastActiveStep] = useState<Step>('brief');
   const [brief, setBrief] = useState<ScriptBrief>({
     niche: '',
     length: LENGTHS[0],
@@ -44,10 +45,19 @@ export default function App() {
     includeVisualCues: true
   });
   const [script, setScript] = useState<string>('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const [loadingText, setLoadingText] = useState('Crafting Hook...');
   const [copied, setCopied] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [history, setHistory] = useState<SavedScript[]>([]);
+
+  // Track navigation to allow returning to active states
+  const navigateTo = (newStep: Step) => {
+    if (step !== 'history') {
+      setLastActiveStep(step);
+    }
+    setStep(newStep);
+  };
 
   // Load history and theme from localStorage
   useEffect(() => {
@@ -78,7 +88,7 @@ export default function App() {
   }, [history]);
 
   useEffect(() => {
-    if (step === 'loading') {
+    if (isGenerating) {
       const texts = [
         "Crafting Hook...",
         "Building Story...",
@@ -95,9 +105,10 @@ export default function App() {
       }, 1500);
       return () => clearInterval(interval);
     }
-  }, [step]);
+  }, [isGenerating]);
 
   const generateScript = async () => {
+    setIsGenerating(true);
     setStep('loading');
     try {
       const prompt = `
@@ -112,9 +123,9 @@ RULES:
 5. LANGUAGE: Output strictly in ${brief.language}.
 
 INPUT CONTEXT:
-Niche: ${brief.niche}
+Niche: ${brief.niche || "General Interest"}
 Length: ${brief.length}
-Audience: ${brief.audience}
+Audience: ${brief.audience || "General Audience"}
 Goal: ${brief.goal}
 
 TASK:
@@ -140,10 +151,12 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
       };
       setHistory(prev => [newScript, ...prev].slice(0, 20)); // Keep last 20
       
+      setIsGenerating(false);
       setStep('script');
     } catch (error) {
       console.error("Generation error:", error);
       setScript("An error occurred while generating the script. Please check your connection and try again.");
+      setIsGenerating(false);
       setStep('script');
     }
   };
@@ -158,7 +171,7 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
     const element = document.createElement("a");
     const file = new Blob([script], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
-    element.download = `narrative-script-${brief.niche.replace(/\s+/g, '-').toLowerCase()}.md`;
+    element.download = `narrative-script-${(brief.niche || 'untitled').replace(/\s+/g, '-').toLowerCase()}.md`;
     document.body.appendChild(element);
     element.click();
   };
@@ -171,10 +184,12 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
   const loadFromHistory = (saved: SavedScript) => {
     setBrief(saved.brief);
     setScript(saved.content);
+    setIsGenerating(false);
     setStep('script');
   };
 
   const estimatedReadingTime = useMemo(() => {
+    if (!script) return "0s";
     const words = script.trim().split(/\s+/).length;
     const minutes = words / 150; // Average speaking rate
     const seconds = Math.round(minutes * 60);
@@ -185,13 +200,14 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
   const reset = () => {
     setStep('brief');
     setScript('');
+    setIsGenerating(false);
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#050505] flex flex-col items-center px-6 py-12 md:py-24 transition-colors duration-300">
       <div className="w-full max-w-2xl">
         <header className="mb-12 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-3 cursor-pointer" onClick={reset}>
             <div className="w-10 h-10 bg-[#111111] dark:bg-[#EEEEEE] flex items-center justify-center rounded-sm">
               <PenTool className="text-white dark:text-[#111111] w-5 h-5" />
             </div>
@@ -201,12 +217,28 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
             </div>
           </div>
           <div className="flex items-center space-x-4">
+            {script && step !== 'script' && !isGenerating && (
+              <button 
+                onClick={() => setStep('script')}
+                className="text-[10px] uppercase tracking-widest font-semibold text-[#111111] dark:text-[#EEEEEE] border-b border-[#111111] dark:border-[#EEEEEE] pb-0.5"
+              >
+                View Current
+              </button>
+            )}
+            {isGenerating && step !== 'loading' && (
+              <button 
+                onClick={() => setStep('loading')}
+                className="text-[10px] uppercase tracking-widest font-semibold text-amber-600 animate-pulse"
+              >
+                Generating...
+              </button>
+            )}
             <button 
-              onClick={() => setStep(step === 'history' ? 'brief' : 'history')}
+              onClick={() => navigateTo(step === 'history' ? lastActiveStep : 'history')}
               className="p-2 hover:bg-[#F5F5F5] dark:hover:bg-[#111111] rounded-full transition-colors"
               title="History"
             >
-              <History className="w-5 h-5 text-[#666666] dark:text-[#888888]" />
+              <History className={`w-5 h-5 ${step === 'history' ? 'text-[#111111] dark:text-[#EEEEEE]' : 'text-[#666666] dark:text-[#888888]'}`} />
             </button>
             <button 
               onClick={() => setDarkMode(!darkMode)}
@@ -313,7 +345,6 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
 
               <button
                 onClick={generateScript}
-                disabled={!brief.niche}
                 className="w-full bg-[#111111] dark:bg-[#EEEEEE] text-white dark:text-[#111111] py-4 font-medium tracking-tight hover:bg-black dark:hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Generate Script
@@ -351,11 +382,11 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
             >
               <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={reset}
+                  onClick={() => setStep('brief')}
                   className="flex items-center text-xs font-semibold uppercase tracking-wider text-[#666666] dark:text-[#888888] hover:text-[#111111] dark:hover:text-[#EEEEEE] transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" />
-                  Back
+                  Back to Brief
                 </button>
                 <div className="flex space-x-4">
                   <div className="hidden md:flex items-center text-[10px] uppercase tracking-widest text-[#999999] mr-4">
@@ -410,11 +441,11 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
             >
               <div className="flex items-center justify-between mb-4">
                 <button
-                  onClick={() => setStep('brief')}
+                  onClick={() => setStep(lastActiveStep)}
                   className="flex items-center text-xs font-semibold uppercase tracking-wider text-[#666666] dark:text-[#888888] hover:text-[#111111] dark:hover:text-[#EEEEEE] transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" />
-                  Back to Brief
+                  Back
                 </button>
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-[#111111] dark:text-[#EEEEEE]">Recent Scripts</h2>
               </div>
