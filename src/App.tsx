@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { motion, AnimatePresence } from "motion/react";
 import { Copy, RotateCcw, ChevronLeft, Check, History, Moon, Sun, Download, Trash2, PenTool } from "lucide-react";
 import Markdown from 'react-markdown';
-
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 type Step = 'brief' | 'loading' | 'script' | 'history';
 
@@ -45,9 +41,11 @@ export default function App() {
     includeVisualCues: true
   });
   const [script, setScript] = useState<string>('');
+  const [metadata, setMetadata] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingText, setLoadingText] = useState('Crafting Hook...');
   const [copied, setCopied] = useState(false);
+  const [metaCopied, setMetaCopied] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [history, setHistory] = useState<SavedScript[]>([]);
 
@@ -112,40 +110,80 @@ export default function App() {
     setStep('loading');
     try {
       const prompt = `
-You are an expert video scriptwriter specializing in high-retention storytelling.
-Your goal is to maximize Average View Duration (AVD).
+SYSTEM: You are a human-like, high-retention video content creator. You write with EMOTION, PERSONALITY, and a unique voice. You are NOT a robot.
+OUTPUT RULE: You MUST ONLY output the script content and metadata. 
+STRICT FORBIDDEN: DO NOT include any <thought>, <reasoning>, introduction, or meta-talk. 
+STRICT FORBIDDEN: DO NOT use JSON formatting. 
+STRICT FORBIDDEN: DO NOT provide a short, rushed response. 
 
-RULES:
-1. THE HOOK (0-5 seconds): Must be controversial, surprising, or highly relatable. No "Hello everyone". Start immediately with the value.
-2. THE STORY (Body): Use the "Open Loop" technique. Introduce a question early, answer it at the end. Keep sentences short.
-3. THE TONE: ${brief.tone}.
-4. FORMATTING: ${brief.includeVisualCues ? "Use markers like [VISUAL CUE] where necessary." : "Do NOT include visual cues, only spoken text."} Use Markdown for bolding and sections.
-5. LANGUAGE: Output strictly in ${brief.language}.
+USER REQUEST:
+Write a DETAILED, EMOTIONAL, and HIGH-QUALITY video script. 
+Niche/Topic: ${brief.niche || "A trending, interesting topic of your choice"}
+Requested Length: ${brief.length || "Medium"} (Ensure the content is substantial and matches this length perfectly.)
+Tone: ${brief.tone || "Engaging and Relatable"}
+Language: ${brief.language || "English"}
+Target Audience: ${brief.audience || "General viewers interested in this topic"}
+Goal: ${brief.goal || "To educate and entertain"}
 
-INPUT CONTEXT:
-Niche: ${brief.niche || "General Interest"}
-Length: ${brief.length}
-Audience: ${brief.audience || "General Audience"}
-Goal: ${brief.goal}
+SCRIPT STRUCTURE & RULES:
+1. HUMAN PERSONALITY: Write as if you are a real person with feelings. Use humor, empathy, or excitement where appropriate. Connect with the audience on an emotional level.
+2. LANGUAGE STYLE: Use simple, conversational, and modern language. Avoid complex or archaic words.
+3. NO "AI-ISMS": Absolutely no "delve", "tapestry", "in conclusion", or "embark".
+4. THE HOOK (0-5 seconds): Start immediately with a high-stakes, emotional, or high-value hook.
+5. THE BODY (Story/Value): Provide a VAST amount of detail. Explain the "why" and "how" clearly. Make it feel like a journey.
+6. FORMATTING: ${brief.includeVisualCues ? "Use markers like [VISUAL CUE] frequently to describe on-screen action." : "No visual cues."} Use Markdown for bolding key points.
 
-TASK:
-Write a full script that forces the viewer to watch until the end. 
 Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
+
+---
+
+AFTER the script, add a separator line "---METADATA---" and then provide:
+1. A catchy **Title** for the video.
+2. A short **Description** (2-3 sentences).
+3. 5-10 relevant **Hashtags**.
+4. 10-15 **Tags** (comma separated).
+
+Format the metadata clearly with labels like **Title:**, **Description:**, etc.
 `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-      });
+      const encodedPrompt = encodeURIComponent(prompt);
+      // Adding model=openai or similar might help, but let's stick to default and be strict in prompt
+      const response = await fetch(`https://text.pollinations.ai/${encodedPrompt}?no-select-model=true`);
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch from Pollinations AI");
+      }
 
-      const generatedText = response.text || "Failed to generate script. Please try again.";
-      setScript(generatedText);
+      let generatedText = await response.text();
+      
+      // Clean up if AI returns JSON or reasoning blocks
+      try {
+        // If it's a JSON string, try to extract content
+        if (generatedText.trim().startsWith('{')) {
+          const json = JSON.parse(generatedText);
+          generatedText = json.content || json.text || json.message || generatedText;
+        }
+      } catch (e) {
+        // Not JSON, continue with raw text
+      }
+
+      // Remove reasoning blocks if present (common in some models)
+      generatedText = generatedText.replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+      generatedText = generatedText.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+      
+      // Split script and metadata
+      const parts = generatedText.split('---METADATA---');
+      const mainScript = parts[0].trim();
+      const metaInfo = parts[1] ? parts[1].trim() : '';
+
+      setScript(mainScript || "Failed to generate script. Please try again.");
+      setMetadata(metaInfo);
       
       // Save to history
       const newScript: SavedScript = {
         id: Date.now().toString(),
         title: brief.niche || "Untitled Script",
-        content: generatedText,
+        content: generatedText, // Store full text in history
         date: new Date().toLocaleDateString(),
         brief: { ...brief }
       };
@@ -167,6 +205,12 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const copyMetadataToClipboard = () => {
+    navigator.clipboard.writeText(metadata);
+    setMetaCopied(true);
+    setTimeout(() => setMetaCopied(false), 2000);
+  };
+
   const downloadScript = () => {
     const element = document.createElement("a");
     const file = new Blob([script], { type: 'text/plain' });
@@ -183,7 +227,12 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
 
   const loadFromHistory = (saved: SavedScript) => {
     setBrief(saved.brief);
-    setScript(saved.content);
+    
+    // Split content into script and metadata
+    const parts = saved.content.split('---METADATA---');
+    setScript(parts[0].trim());
+    setMetadata(parts[1] ? parts[1].trim() : '');
+    
     setIsGenerating(false);
     setStep('script');
   };
@@ -200,6 +249,7 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
   const reset = () => {
     setStep('brief');
     setScript('');
+    setMetadata('');
     setIsGenerating(false);
   };
 
@@ -421,6 +471,26 @@ Include clear sections: **[HOOK]**, **[BODY]**, and **[CTA]**.
                   <Markdown>{script}</Markdown>
                 </div>
               </div>
+
+              {metadata && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[11px] uppercase tracking-wider font-bold text-[#111111] dark:text-[#EEEEEE]">Video Metadata (Title, Tags, etc.)</h3>
+                    <button
+                      onClick={copyMetadataToClipboard}
+                      className="flex items-center text-[10px] font-semibold uppercase tracking-wider text-[#666666] dark:text-[#888888] hover:text-[#111111] dark:hover:text-[#EEEEEE] transition-colors"
+                    >
+                      {metaCopied ? <Check className="w-3 h-3 mr-1 text-green-600" /> : <Copy className="w-3 h-3 mr-1" />}
+                      {metaCopied ? 'Copied' : 'Copy All'}
+                    </button>
+                  </div>
+                  <div className="bg-[#F9F9F9] dark:bg-[#111111] border border-[#EEEEEE] dark:border-[#222222] p-6 shadow-sm transition-colors">
+                    <div className="markdown-body text-sm">
+                      <Markdown>{metadata}</Markdown>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-8 border-t border-[#EEEEEE] dark:border-[#222222]">
                 <p className="text-[10px] text-[#999999] dark:text-[#555555] uppercase tracking-widest text-center">
